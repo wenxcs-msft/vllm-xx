@@ -157,6 +157,7 @@ class FlashAttentionMetadata(AttentionMetadata):
             slot_mapping=self.slot_mapping[:self.num_prefill_tokens],
             seq_lens=self.seq_lens[:self.num_prefills],
             seq_lens_tensor=self.seq_lens_tensor[:self.num_prefills],
+            num_orig_input_tokens_tensor=self.num_orig_input_tokens_tensor[:self.num_prefills],
             max_query_len=self.max_query_len,
             max_prefill_seq_len=self.max_prefill_seq_len,
             max_decode_seq_len=0,
@@ -185,6 +186,7 @@ class FlashAttentionMetadata(AttentionMetadata):
             slot_mapping=self.slot_mapping[self.num_prefill_tokens:],
             seq_lens=None,
             seq_lens_tensor=self.seq_lens_tensor[self.num_prefills:],
+            num_orig_input_tokens_tensor=self.num_orig_input_tokens_tensor[:self.num_prefills],
             max_query_len=None,
             max_prefill_seq_len=0,
             max_decode_seq_len=self.max_decode_seq_len,
@@ -272,6 +274,7 @@ class FlashAttentionMetadataBuilder(
                                  self.block_size, inter_data.block_tables)
 
     def build(self, seq_lens: List[int], query_lens: List[int],
+              num_orig_input_tokens_list: List[int],
               cuda_graph_pad_size: int, batch_size: int):
         """Build attention metadata with on-device tensors.
 
@@ -328,6 +331,10 @@ class FlashAttentionMetadataBuilder(
                                            self.runner.pin_memory)
         query_lens_tensor = async_tensor_h2d(query_lens, torch.long, device,
                                              self.runner.pin_memory)
+        num_orig_input_tokens_tensor = async_tensor_h2d(
+            num_orig_input_tokens_list, torch.long, device,
+            self.runner.pin_memory
+        )
         slot_mapping_tensor = async_tensor_h2d(self.slot_mapping, torch.long,
                                                device, self.runner.pin_memory)
         query_start_loc = torch.zeros(query_lens_tensor.shape[0] + 1,
@@ -352,6 +359,7 @@ class FlashAttentionMetadataBuilder(
             num_decode_tokens=num_decode_tokens,
             seq_lens=seq_lens,
             seq_lens_tensor=seq_lens_tensor,
+            num_orig_input_tokens_tensor=num_orig_input_tokens_tensor,
             max_query_len=max_query_len,
             max_prefill_seq_len=max_prefill_seq_len,
             max_decode_seq_len=max_decode_seq_len,
