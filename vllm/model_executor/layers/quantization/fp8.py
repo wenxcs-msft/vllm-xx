@@ -262,7 +262,29 @@ class Fp8MoEMethod(FusedMoEMethodBase):
 
     def __init__(self, quant_config: Fp8Config):
         self.quant_config = quant_config
+        self.fast_a100_fp8 = True
+        self.gpu_memory_saving_mode = True
 
+        if self.is_sm80():
+            print_warning_once("Detected A100.")
+            if not self.fast_a100_fp8:
+                print_warning_once("Using Triton FP8 MoE Kernel.")
+                from vllm.model_executor.layers.phi_ops.moe.vllm_moe.ampere_fp8_fused_moe import fused_moe
+                self.fused_moe_forward = fused_moe
+            else:
+                print_warning_once("Using Cutlass FP8 MoE Kernel.")
+                from vllm.model_executor.layers.phi_ops.moe.tensorrt_llm_moe.ampere_fp8_fused_moe import fused_moe
+                self.fused_moe_forward = fused_moe
+        else:
+            from vllm.model_executor.layers.fused_moe import fused_moe
+            self.fused_moe_forward = fused_moe
+
+    def is_sm80(self, device_id=0):
+        if not torch.cuda.is_available():
+            return False
+        device_properties = torch.cuda.get_device_properties(device_id)
+        return (device_properties.major == 8 and device_properties.minor == 0)
+    
     def create_weights(self, layer: Module, num_experts: int, hidden_size: int,
                        intermediate_size: int, params_dtype: torch.dtype,
                        **extra_weight_attrs):
@@ -274,6 +296,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         w13_weight = torch.nn.Parameter(torch.empty(num_experts,
                                                     2 * intermediate_size,
                                                     hidden_size,
+                                                    device="cpu",
                                                     dtype=params_dtype),
                                         requires_grad=False)
         layer.register_parameter("w13_weight", w13_weight)
@@ -282,6 +305,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         w2_weight = torch.nn.Parameter(torch.empty(num_experts,
                                                    hidden_size,
                                                    intermediate_size,
+                                                   device="cpu",
                                                    dtype=params_dtype),
                                        requires_grad=False)
         layer.register_parameter("w2_weight", w2_weight)
@@ -331,13 +355,14 @@ class Fp8MoEMethod(FusedMoEMethodBase):
             layer.a2_scale = None
 
     def process_weights_after_loading(self, layer: Module) -> None:
-
         # If checkpoint is fp16, quantize in place.
         if not self.quant_config.is_checkpoint_fp8_serialized:
             w13_weight = torch.empty_like(layer.w13_weight.data,
-                                          dtype=torch.float8_e4m3fn)
+                                          dtype=torch.float8_e4m3fn,
+                                          device="cuda")
             w2_weight = torch.empty_like(layer.w2_weight.data,
-                                         dtype=torch.float8_e4m3fn)
+                                         dtype=torch.float8_e4m3fn,
+                                         device="cuda")
 
             # Re-initialize w13_scale because we directly quantize
             # merged w13 weights and generate a single scaling factor.
@@ -349,14 +374,41 @@ class Fp8MoEMethod(FusedMoEMethodBase):
             for expert in range(layer.num_experts):
                 w13_weight[expert, :, :], layer.w13_scale[
                     expert] = ops.scaled_fp8_quant(
-                        layer.w13_weight.data[expert, :, :])
+                        layer.w13_weight.data[expert, :, :].cuda())
                 w2_weight[expert, :, :], layer.w2_scale[
                     expert] = ops.scaled_fp8_quant(
-                        layer.w2_weight.data[expert, :, :])
-            layer.w13_weight = torch.nn.Parameter(w13_weight,
-                                                  requires_grad=False)
-            layer.w2_weight = torch.nn.Parameter(w2_weight,
-                                                 requires_grad=False)
+                        layer.w2_weight.data[expert, :, :].cuda())
+
+            if self.is_sm80() and self.fast_a100_fp8:
+                print_warning_once("Preprocessing weights for A100 FP8 fused MoE")
+                w13_weight =  torch.ops._phi_C.preprocess_weights_for_mixed_gemm(
+                    w13_weight.view(torch.int8).transpose(1,2).contiguous().cpu()).to(w13_weight.device)
+                w2_weight =  torch.ops._phi_C.preprocess_weights_for_mixed_gemm(
+                    w2_weight.view(torch.int8).transpose(1,2).contiguous().cpu()).to(w2_weight.device)
+                layer.w13_scale = torch.nn.Parameter(
+                    layer.w13_scale.to(dtype=torch.float16)
+                    .unsqueeze(1)
+                    .expand(-1, layer.w13_scale.size(-1))
+                    .contiguous(),
+                    requires_grad=False,
+                )
+                layer.w2_scale = torch.nn.Parameter(
+                    layer.w2_scale.to(dtype=torch.float16)
+                    .unsqueeze(1)
+                    .expand(-1, layer.w2_scale.size(-1))
+                    .contiguous(),
+                    requires_grad=False,
+                )
+            
+            # This is to skip the move to cpu 
+            layer.register_parameter("w13_weight_fp8", torch.nn.Parameter(w13_weight, requires_grad=False))
+            layer.register_parameter("w2_weight_fp8", torch.nn.Parameter(w2_weight, requires_grad=False))
+            
+            layer.w13_weight = torch.nn.Parameter(torch.empty(0),
+                                                requires_grad=False)
+            layer.w2_weight = torch.nn.Parameter(torch.empty(0),
+                                                requires_grad=False)
+
             return
 
         # If checkpoint is fp8, we need to handle that the
@@ -410,24 +462,27 @@ class Fp8MoEMethod(FusedMoEMethodBase):
               renormalize: bool = True,
               use_grouped_topk: bool = False,
               num_expert_group: Optional[int] = None,
-              topk_group: Optional[int] = None) -> torch.Tensor:
+              topk_group: Optional[int] = None,
+              routing_func: callable = torch.topk,
+              ) -> torch.Tensor:
 
-        from vllm.model_executor.layers.fused_moe import fused_moe
-        return fused_moe(x,
-                         layer.w13_weight,
-                         layer.w2_weight,
-                         router_logits,
-                         top_k,
-                         renormalize=renormalize,
-                         inplace=True,
-                         use_fp8=True,
-                         w1_scale=layer.w13_scale,
-                         w2_scale=layer.w2_scale,
-                         a1_scale=layer.a13_scale,
-                         a2_scale=layer.a2_scale,
-                         use_grouped_topk=use_grouped_topk,
-                         num_expert_group=num_expert_group,
-                         topk_group=topk_group)
+        return self.fused_moe_forward(x,
+                                    layer.w13_weight_fp8,
+                                    layer.w2_weight_fp8,
+                                    router_logits,
+                                    top_k,
+                                    renormalize=renormalize,
+                                    inplace=True,
+                                    use_fp8=True,
+                                    w1_scale=layer.w13_scale,
+                                    w2_scale=layer.w2_scale,
+                                    a1_scale=layer.a13_scale,
+                                    a2_scale=layer.a2_scale,
+                                    use_grouped_topk=use_grouped_topk,
+                                    num_expert_group=num_expert_group,
+                                    topk_group=topk_group,
+                                    routing_func=routing_func,
+                                    )
 
 
 class Fp8KVCacheMethod(BaseKVCacheMethod):
