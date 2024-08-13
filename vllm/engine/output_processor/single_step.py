@@ -295,7 +295,7 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
                     best_running_seq.get_beam_search_score(
                         length_penalty=length_penalty,
                         eos_token_id=best_running_seq.eos_token_id,
-                        seq_len=max_possible_length))
+                        seq_len=131072))
             else:
                 # Otherwise, beam search will prefer shorter sequences. The
                 # highest attainable score calculation is based on the current
