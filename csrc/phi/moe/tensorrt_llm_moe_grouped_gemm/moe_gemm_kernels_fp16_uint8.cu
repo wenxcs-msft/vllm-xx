@@ -25,4 +25,5 @@
 namespace tensorrt_llm
 {
 template class MoeGemmRunner<half, uint8_t>;
+template class MoeGemmRunner<__nv_bfloat16, uint8_t>;
 }

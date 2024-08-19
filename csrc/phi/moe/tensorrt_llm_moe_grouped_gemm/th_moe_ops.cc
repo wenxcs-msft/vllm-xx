@@ -131,6 +131,21 @@ namespace phi_c
             }
             break;
         }
+        case at::ScalarType::BFloat16:
+        {
+            if (weights.scalar_type() == torch::kInt8)
+            {
+                CHECK_INPUT(weights, torch::kInt8);
+                grouped_gemm_helper<__nv_bfloat16, uint8_t>(
+                    activations, weights, weight_scales, total_rows_before_expert, out, activation_type, config_id);
+            }
+            else
+            {
+                std::string err_msg = "Unsupported weight type " + std::string(at::toString(weights.scalar_type()));
+                TORCH_CHECK(false, err_msg);
+            }
+            break;
+        }
         default:
             TORCH_CHECK(false, "Incompatible tensor type for grouped gemm bias");
         }

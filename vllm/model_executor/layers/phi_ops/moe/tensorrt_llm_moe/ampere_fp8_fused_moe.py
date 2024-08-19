@@ -128,7 +128,7 @@ def fused_moe(
     cfg_id_1=-1,
 ) -> torch.Tensor:
     hidden_states_dtype = activation.dtype
-    hidden_states = activation.to(torch.float16)
+    hidden_states = activation #.to(torch.float16)
 
     # Check constraints.
     M, K = hidden_states.shape
