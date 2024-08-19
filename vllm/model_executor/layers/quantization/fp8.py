@@ -253,7 +253,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
 
     def __init__(self, quant_config: Fp8Config):
         self.quant_config = quant_config
-        self.fast_a100_fp8 = False
+        self.fast_a100_fp8 = True
         self.gpu_memory_saving_mode = True
 
         if self.is_sm80():
@@ -377,14 +377,14 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 layer.w13_scale = torch.nn.Parameter(
                     layer.w13_scale.to(dtype=torch.float16)
                     .unsqueeze(1)
-                    .expand(-1, layer.w13_scale.size(-1))
+                    .expand(-1, w13_weight.size(-1))
                     .contiguous(),
                     requires_grad=False,
                 )
                 layer.w2_scale = torch.nn.Parameter(
                     layer.w2_scale.to(dtype=torch.float16)
                     .unsqueeze(1)
-                    .expand(-1, layer.w2_scale.size(-1))
+                    .expand(-1, w2_weight.size(-1))
                     .contiguous(),
                     requires_grad=False,
                 )
@@ -393,7 +393,6 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                                                   requires_grad=False)
             layer.w2_weight = torch.nn.Parameter(w2_weight,
                                                  requires_grad=False)
-
             return
 
         # If checkpoint is fp8, we need to handle that the
