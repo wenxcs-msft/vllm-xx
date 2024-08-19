@@ -116,6 +116,7 @@ namespace phi_c
 
         switch (_st)
         {
+        /*
         case at::ScalarType::Half:
         {
             if (weights.scalar_type() == torch::kInt8)
@@ -131,6 +132,7 @@ namespace phi_c
             }
             break;
         }
+        */
         case at::ScalarType::BFloat16:
         {
             if (weights.scalar_type() == torch::kInt8)
