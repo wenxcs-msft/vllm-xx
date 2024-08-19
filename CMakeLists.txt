@@ -318,6 +318,7 @@ list(REMOVE_ITEM VLLM_PHI_GPU_FLAGS
 
 list(APPEND VLLM_PHI_GPU_FLAGS
   "-std=c++17"
+  "-DENABLE_BF16"
 )
 
 # Only enable when SM80(A100)
