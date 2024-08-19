@@ -90,8 +90,7 @@ struct FastInterleavedAndBiasedNumericArrayConverter<half_t, uint8_t, 4>
                     "lop3.b32 b1, a1, 0x7fff7fff, 0, 0xc0;  \n"  // (strip sign)
                     "shr.b32  b0, b0, 1;                    \n"  // b0 >>= 1
                     "shr.b32  b1, b1, 1;                    \n"  // shift into fp16 position
-                    "add.u32  b0, b0, 0x20002000;           \n"  // b0.exp += 2**4-2**3
-                                                                 // exponent compensate = 8
+                    "add.u32  b0, b0, 0x20002000;           \n"  // b0.exp += 2**4-2**3 // exponent compensate = 8
                     "add.u32  b1, b1, 0x20002000;           \n"  // b1 += 8<<10 | 8<<10<<16
                     "lop3.b32 %0, b0, 0x80008000, a0, 0xf8; \n"  // out0 = b0|(0x80008000&a0)
                     "lop3.b32 %1, b1, 0x80008000, a1, 0xf8; \n" // (restore sign)
@@ -161,28 +160,20 @@ struct FastInterleavedAndBiasedNumericArrayConverter<bfloat16_t, uint8_t, 4>
         uint32_t const i8s = reinterpret_cast<uint32_t const&>(source);
         uint32_t* h = reinterpret_cast<uint32_t*>(&result);
 
-        asm volatile(
-            "{                                      \n"
-            ".reg .b32 a<2>, b<2>;                  \n"  // if input =
-                                                         // 0xf1f2f3f4
-            "prmt.b32 a0, 0, $2, 0x5040;            \n"  // a0 = 0xf300f400
-            "prmt.b32 a1, 0, $2, 0x7060;            \n"  // a1 = 0xf100f200
+        asm volatile( "{                                      \n"
+            ".reg .b32 a<2>, b<2>;                  \n"  // if input = // 0xf1f2f3f4
+            "prmt.b32 a0, 0, %2, 0x5040;            \n"  // a0 = 0xf300f400
+            "prmt.b32 a1, 0, %2, 0x7060;            \n"  // a1 = 0xf100f200
             "and.b32 b0, a0, 0x7fff7fff;            \n"  // b0 = a0 & 0x7fff7fff
             "and.b32 b1, a1, 0x7fff7fff;            \n"  // (strip sign)
             "shr.b32 b0, b0, 4;                     \n"  // b0 >>= 4
-            "shr.b32 b1, b1, 4;                     \n"  // shift into fp16
-                                                         // position
-            "add.u32 b0, b0, 0x3c003c00;            \n"  // b0.exp += 2**7-2**3
-                                                         // exponent compensate
-                                                         // = 120
-            "add.u32 b1, b1, 0x3c003c00;            \n"  // b1 += 120<<7 |
-                                                         // 120<<7<<16
-            "lop3.b32 $0, b0, 0x80008000, a0, 0xf8; \n"  // out0 =
-                                                         // b0|(0x80008000&a0)
-            "lop3.b32 $1, b1, 0x80008000, a1, 0xf8; \n"  // (restore sign)
-            "}                                      \n"
-            : "=r"(h[0]), "=r"(h[1])
-            : "r"(i8s));
+            "shr.b32 b1, b1, 4;                     \n"  // shift into fp16 // position
+            "add.u32 b0, b0, 0x3c003c00;            \n"  // b0.exp += 2**7-2**3 // exponent compensate // = 120
+            "add.u32 b1, b1, 0x3c003c00;            \n"  // b1 += 120<<7 | // 120<<7<<16
+            "lop3.b32 %0, b0, 0x80008000, a0, 0xf8; \n"  // out0 = // b0|(0x80008000&a0)
+            "lop3.b32 %1, b1, 0x80008000, a1, 0xf8; \n"  // (restore sign)
+            "}                                      \n" : "=r"(h[0]), "=r"(h[1]) : "r"(i8s));
+
         return result;
     }
 
