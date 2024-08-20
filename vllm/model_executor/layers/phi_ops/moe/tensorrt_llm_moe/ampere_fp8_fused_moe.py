@@ -203,9 +203,9 @@ def fused_moe(
     ops.silu_and_mul(gathered_cache_2, gathered_cache_1.view(-1, N))
 
     phi_ops_grouped_gemm(
-        gathered_cache_2.view(torch.float16),
+        gathered_cache_2,
         w2.view(torch.int8),
-        w2_scale.view(hidden_states.dtype),
+        w2_scale,
         total_rows_before_expert,
         gathered_cache_3,
         5,
@@ -225,7 +225,7 @@ def fused_moe(
         topk_weights=topk_weights,
     )
 
-    intermediate_cache3 = intermediate_cache3[:M, :, :].to(hidden_states_dtype)
+    intermediate_cache3 = intermediate_cache3[:M, :, :]
 
     if inplace:
         return torch.sum(
