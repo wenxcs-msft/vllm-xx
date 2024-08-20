@@ -214,6 +214,62 @@ def sparsemixer(scores, top_k, jitter_eps=0.01):
     )
 
 
+class PhiFusedMoE(FusedMoE):
+    """PhiFusedMoE layer for PhiMoE models.
+
+    This layer contains both MergedColumnParallel weights (gate_up_proj / 
+    w13) and RowParallelLinear weights (down_proj/ w2).
+
+    Note: Mixtral uses w1, w2, and w3 for gate, up, and down_proj. We
+    copy that naming convention here and handle any remapping in the
+    load_weights function in each model implementation.
+
+    Args:
+        num_experts: Number of experts in the model
+        top_k: Number of experts selected for each token
+        hidden_size: Input hidden state size of the transformer
+        intermediate_size: Intermediate size of the experts
+        params_dtype: Data type for the parameters.
+        reduce_results: Whether to all all_reduce on the output of the layer
+        renomalize: Whether to renormalize the logits in the fused_moe kernel
+        quant_config: Quantization configure.
+    """
+
+    def __init__(
+        self,
+        num_experts: int,
+        top_k: int,
+        hidden_size: int,
+        intermediate_size: int,
+        params_dtype: Optional[torch.dtype] = None,
+        reduce_results: bool = False,
+        renormalize: bool = True,
+        use_grouped_topk: bool = False,
+        num_expert_group: Optional[int] = None,
+        topk_group: Optional[int] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        tp_size: Optional[int] = None,
+        prefix: str = "",
+        routing_func: callable = torch.topk,
+    ):
+        super().__init__(
+            num_experts,
+            top_k,
+            hidden_size,
+            intermediate_size,
+            params_dtype,
+            reduce_results,
+            renormalize,
+            use_grouped_topk,
+            num_expert_group,
+            topk_group,
+            quant_config,
+            tp_size,
+            prefix,
+            routing_func,
+        )
+
+
 class PhiMoE(nn.Module):
     """A tensor-parallel MoE implementation for PhiMoE that shards each expert
     across all ranks.
