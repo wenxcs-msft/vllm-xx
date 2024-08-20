@@ -7,7 +7,7 @@ from torch.nn.parameter import Parameter
 import vllm.envs as envs
 from vllm import _custom_ops as ops
 from vllm.logger import init_logger
-from vllm.model_executor.layers.fused_moe import FusedMoE, FusedMoEMethodBase
+from vllm.model_executor.layers.fused_moe import PhiFusedMoE, FusedMoE, FusedMoEMethodBase
 from vllm.model_executor.layers.linear import (LinearBase, LinearMethodBase,
                                                UnquantizedLinearMethod)
 from vllm.model_executor.layers.quantization.base_config import (
@@ -26,7 +26,6 @@ from vllm.model_executor.utils import set_weight_attrs
 from vllm.platforms import current_platform
 from vllm.utils import is_hip, print_warning_once
 
-from vllm.model_executor.models.phimoe import PhiFusedMoE
 
 ACTIVATION_SCHEMES = ["static", "dynamic"]
 
@@ -86,12 +85,12 @@ class Fp8Config(QuantizationConfig):
             if is_layer_skipped(prefix, self.ignored_layers):
                 return UnquantizedLinearMethod()
             return Fp8LinearMethod(self)
+        elif isinstance(layer, PhiFusedMoE):
+            return PhiFp8MoEMethod(self)
         elif isinstance(layer, FusedMoE):
             return Fp8MoEMethod(self)
         elif isinstance(layer, Attention):
             return Fp8KVCacheMethod(self)
-        elif isinstance(layer, PhiFp8MoEMethod):
-            return PhiFp8MoEMethod(self)
         return None
 
     def get_scaled_act_names(self) -> List[str]:
@@ -347,9 +346,9 @@ class PhiFp8MoEMethod(FusedMoEMethodBase):
         layer.register_parameter("w2_weight_scale", w2_weight_scale)
 
 
-     def process_weights_after_loading(self, layer: Module) -> None:
+    def process_weights_after_loading(self, layer: Module) -> None:
         # If checkpoint is fp16, quantize in place.
-        if not self.is_sm80(): 
+        if not self.run_on_sm80: 
             w13_weight = torch.empty_like(layer.w13_weight.data,
                                           dtype=torch.float8_e4m3fn,
                                           device="cuda")
@@ -381,7 +380,6 @@ class PhiFp8MoEMethod(FusedMoEMethodBase):
             return
         else:
             # Currently used by PhiMOE
-            assert self.gpu_memory_saving_mode
             w13_weight = torch.empty_like(layer.w13_weight.data,
                                         dtype=torch.float8_e4m3fn,
                                         device="cuda")
@@ -390,16 +388,16 @@ class PhiFp8MoEMethod(FusedMoEMethodBase):
                                         device="cuda")
             # Re-initialize w13_scale because we directly quantize
             # merged w13 weights and generate a single scaling factor.
-            layer.w13_scale = torch.nn.Parameter(torch.ones(
+            layer.w13_weight_scale = torch.nn.Parameter(torch.ones(
                 layer.num_experts,
                 dtype=torch.float32,
                 device=w13_weight.device),
                                                 requires_grad=False)
             for expert in range(layer.num_experts):
-                w13_weight[expert, :, :], layer.w13_scale[
+                w13_weight[expert, :, :], layer.w13_weight_scale[
                     expert] = ops.scaled_fp8_quant(
                         layer.w13_weight.data[expert, :, :].cuda())
-                w2_weight[expert, :, :], layer.w2_scale[
+                w2_weight[expert, :, :], layer.w2_weight_scale[
                     expert] = ops.scaled_fp8_quant(
                         layer.w2_weight.data[expert, :, :].cuda())
 
@@ -409,15 +407,15 @@ class PhiFp8MoEMethod(FusedMoEMethodBase):
                     w13_weight.view(torch.int8).transpose(1,2).contiguous().cpu()).to(w13_weight.device)
                 w2_weight =  torch.ops._phi_C.preprocess_weights_for_mixed_gemm(
                     w2_weight.view(torch.int8).transpose(1,2).contiguous().cpu()).to(w2_weight.device)
-                layer.w13_scale = torch.nn.Parameter(
-                    layer.w13_scale.to(dtype=torch.bfloat16)
+                layer.w13_weight_scale = torch.nn.Parameter(
+                    layer.w13_weight_scale.to(dtype=torch.bfloat16)
                     .unsqueeze(1)
                     .expand(-1, w13_weight.size(-1))
                     .contiguous(),
                     requires_grad=False,
                 )
-                layer.w2_scale = torch.nn.Parameter(
-                    layer.w2_scale.to(dtype=torch.bfloat16)
+                layer.w2_weight_scale = torch.nn.Parameter(
+                    layer.w2_weight_scale.to(dtype=torch.bfloat16)
                     .unsqueeze(1)
                     .expand(-1, w2_weight.size(-1))
                     .contiguous(),
@@ -453,10 +451,10 @@ class PhiFp8MoEMethod(FusedMoEMethodBase):
                                         renormalize=renormalize,
                                         inplace=True,
                                         use_fp8=True,
-                                        w1_scale=layer.w13_scale,
-                                        w2_scale=layer.w2_scale,
-                                        a1_scale=layer.a13_scale,
-                                        a2_scale=layer.a2_scale,
+                                        w1_scale=layer.w13_weight_scale,
+                                        w2_scale=layer.w2_weight_scale,
+                                        a1_scale=None,
+                                        a2_scale=None,
                                         use_grouped_topk=use_grouped_topk,
                                         num_expert_group=num_expert_group,
                                         topk_group=topk_group,
