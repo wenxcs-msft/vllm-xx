@@ -269,7 +269,7 @@ class PhiMoE(nn.Module):
             renormalize=False,
             quant_config=quant_config,
             tp_size=tp_size,
-            custom_routing_function=phimoe_routing_function,
+            custom_routing_function=phimoe_routing_function
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
