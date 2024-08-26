@@ -157,7 +157,7 @@ class mp(torch.autograd.Function):
         )
 
 
-def sparsemixer(scores, top_k, jitter_eps=0.01):
+def sparsemixer(scores, top_k=2, jitter_eps=0.01):
     assert top_k == 2
 
     ################ first expert ################
@@ -221,11 +221,10 @@ def phimoe_routing_function(
 ):
     assert hidden_states.shape[0] == gating_output.shape[0], (
         "Number of tokens mismatch")
+    assert topk == 2, "Only top-2 routing is supported"
+    assert renormalize is False, "Renormalization is not supported"
 
     topk_weights, topk_ids = sparsemixer(gating_output, topk)
-    if renormalize:
-        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
-
     return topk_weights, topk_ids
 
 
