@@ -10,38 +10,61 @@ MODELS = [
     "microsoft/Phi-3.5-MoE-instruct",
 ]
 
+
 def test_phimoe_routing_function():
     import torch
+
     from vllm.model_executor.models.phimoe import phimoe_routing_function
     test_case = {
         0: {
-            "hidden_states": torch.tensor([1, 2, 3, 4, 5, 6, 7, 8], dtype=torch.float32, requires_grad=False).view(4, 2),
-            "gating_output": torch.tensor([0.1, 0.2, 0.3, 0.4], dtype=torch.float32, requires_grad=False),
-            "topk": 2,
-            "renormalize": False,
+            "hidden_states":
+            torch.tensor([1, 2, 3, 4, 5, 6, 7, 8],
+                         dtype=torch.float32,
+                         requires_grad=False).view(4, 2),
+            "gating_output":
+            torch.tensor([0.1, 0.2, 0.3, 0.4],
+                         dtype=torch.float32,
+                         requires_grad=False),
+            "topk":
+            2,
+            "renormalize":
+            False,
         },
         1: {
-            "hidden_states": torch.tensor([1, 2, 3, 4, 5, 6, 7, 8], dtype=torch.float32, requires_grad=False).view(4, 2),
-            "gating_output": torch.tensor([0.4, 0.2, 0.3, 0.4], dtype=torch.float32, requires_grad=False),
-            "topk": 2,
-            "renormalize": False,
+            "hidden_states":
+            torch.tensor([1, 2, 3, 4, 5, 6, 7, 8],
+                         dtype=torch.float32,
+                         requires_grad=False).view(4, 2),
+            "gating_output":
+            torch.tensor([0.4, 0.2, 0.3, 0.4],
+                         dtype=torch.float32,
+                         requires_grad=False),
+            "topk":
+            2,
+            "renormalize":
+            False,
         }
     }
 
     ground_truth = {
         0: {
-            "topk_weights": torch.tensor([1., 1.], dtype=torch.float32, requires_grad=False),
-            "topk_ids": torch.tensor([3, 2], dtype=torch.long, requires_grad=False),
+            "topk_weights":
+            torch.tensor([1., 1.], dtype=torch.float32, requires_grad=False),
+            "topk_ids":
+            torch.tensor([3, 2], dtype=torch.long, requires_grad=False),
         },
         1: {
-            "topk_weights": torch.tensor([0.5, 1.], dtype=torch.float32, requires_grad=False),
-            "topk_ids": torch.tensor([0, 3], dtype=torch.long, requires_grad=False),
+            "topk_weights":
+            torch.tensor([0.5, 1.], dtype=torch.float32, requires_grad=False),
+            "topk_ids":
+            torch.tensor([0, 3], dtype=torch.long, requires_grad=False),
         }
     }
 
-    for test_id in test_case.keys():
-        topk_weights,topk_ids = phimoe_routing_function(**test_case[test_id])
-        assert torch.allclose(topk_weights, ground_truth[test_id]["topk_weights"])
+    for test_id in test_case:
+        topk_weights, topk_ids = phimoe_routing_function(**test_case[test_id])
+        assert torch.allclose(topk_weights,
+                              ground_truth[test_id]["topk_weights"])
         assert torch.equal(topk_ids, ground_truth[test_id]["topk_ids"])
 
 
