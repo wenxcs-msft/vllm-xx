@@ -63,7 +63,7 @@ _GENERATION_MODELS = {
                                           "PaliGemmaForConditionalGeneration"),
     "PhiForCausalLM": ("phi", "PhiForCausalLM"),
     "Phi3ForCausalLM": ("llama", "LlamaForCausalLM"),
-    "PhiLongRoPEForCausalL": ("llama", "LlamaForCausalLM"),
+    "PhiLongRoPEForCausalLM": ("llama", "LlamaForCausalLM"),
     "Phi3VForCausalLM": ("phi3v", "Phi3VForCausalLM"),
     "PhiMoEForCausalLM": ("phimoe", "PhiMoEForCausalLM"),
     "QWenLMHeadModel": ("qwen", "QWenLMHeadModel"),
