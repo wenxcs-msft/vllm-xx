@@ -148,6 +148,7 @@ class CommonMetadataBuilder(AttentionMetadataBuilder[TAttentionMetadata]):
                                  self.block_size, inter_data.block_tables)
 
     def build(self, seq_lens: List[int], query_lens: List[int],
+              num_orig_input_tokens_list: List[int],
               cuda_graph_pad_size: int, batch_size: int):
         """Build attention metadata with on-device tensors.
 
@@ -209,6 +210,9 @@ class CommonMetadataBuilder(AttentionMetadataBuilder[TAttentionMetadata]):
         query_lens_tensor = torch.tensor(query_lens,
                                          dtype=torch.long,
                                          device=device)
+        num_orig_input_tokens_tensor = torch.tensor(num_orig_input_tokens_list,
+                                                    dtype=torch.long,
+                                                    device=device)
         query_start_loc = torch.zeros(query_lens_tensor.shape[0] + 1,
                                       dtype=torch.int32,
                                       device=device)
@@ -235,6 +239,7 @@ class CommonMetadataBuilder(AttentionMetadataBuilder[TAttentionMetadata]):
             num_decode_tokens=num_decode_tokens,
             seq_lens=seq_lens,
             seq_lens_tensor=seq_lens_tensor,
+            num_orig_input_tokens_tensor=num_orig_input_tokens_tensor,
             max_query_len=max_query_len,
             max_prefill_seq_len=max_prefill_seq_len,
             max_decode_seq_len=max_decode_seq_len,

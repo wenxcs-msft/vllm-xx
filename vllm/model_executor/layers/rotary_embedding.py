@@ -530,18 +530,8 @@ class Phi3LongRoPEScaledRotaryEmbedding(nn.Module):
         self.short_mscale = short_mscale
         self.long_mscale = long_mscale
 
-        scale = (self.max_position_embeddings /
-                 self.original_max_position_embeddings)
-
-        if scale <= 1.0:
-            self.scaling_factor = 1.0
-        else:
-            self.scaling_factor = math.sqrt(
-                1 + math.log(scale) /
-                math.log(self.original_max_position_embeddings))
-
         short_cache = self._compute_cos_sin_cache(
-            original_max_position_embeddings, short_factor, short_mscale)
+            max_position_embeddings, short_factor, short_mscale)
         short_cache = short_cache.to(dtype)
         self.register_buffer("short_cos_sin_cache",
                              short_cache,
@@ -575,8 +565,8 @@ class Phi3LongRoPEScaledRotaryEmbedding(nn.Module):
         inv_freq = self._compute_inv_freq(rescale_factors)
         t = torch.arange(max_position_embeddings, dtype=torch.float)
         freqs = torch.einsum("i,j -> ij", t, inv_freq)
-        cos = freqs.cos() * mscale * self.scaling_factor
-        sin = freqs.sin() * mscale * self.scaling_factor
+        cos = freqs.cos() * mscale
+        sin = freqs.sin() * mscale
         cache = torch.cat((cos, sin), dim=-1)
         return cache
 
@@ -586,13 +576,16 @@ class Phi3LongRoPEScaledRotaryEmbedding(nn.Module):
         query: torch.Tensor,
         key: torch.Tensor,
         offsets: Optional[torch.Tensor] = None,
+        *,
+        num_orig_input_tokens_tensor: torch.Tensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         query = query.view(*query.shape[:-1], -1, self.head_size)
         key = key.view(*key.shape[:-1], -1, self.head_size)
 
         k = self.original_max_position_embeddings
-        long_prompt_offset = (torch.any(positions > k).float() *
-                              torch.full_like(positions, k)).long()
+        long_prompt_offset_0 = (torch.any(positions > k).float() * torch.full_like(positions, k)).long()
+        long_prompt_offset_1 = torch.where(num_orig_input_tokens_tensor <= k, torch.zeros_like(num_orig_input_tokens_tensor), torch.full_like(num_orig_input_tokens_tensor, self.max_position_embeddings))
+        long_prompt_offset = torch.where(num_orig_input_tokens_tensor < 0, long_prompt_offset_0, long_prompt_offset_1)
         idx = (torch.add(positions, long_prompt_offset)
                if long_prompt_offset is not None else positions)
         self.long_short_cos_sin_cache: torch.Tensor = (
