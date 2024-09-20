@@ -209,8 +209,14 @@ class HfRunner:
 
     def wrap_device(self, input: _T) -> _T:
         if not is_cpu():
+            # Check if the input is already on the GPU
+            if hasattr(input, 'device') and input.device.type == "cuda":
+                return input  # Already on GPU, no need to move
             return input.to("cuda")
         else:
+            # Check if the input is already on the CPU
+            if hasattr(input, 'device') and input.device.type == "cpu":
+                return input  # Already on CPU, no need to move
             return input.to("cpu")
 
     def __init__(
@@ -272,7 +278,7 @@ class HfRunner:
     def generate(
         self,
         prompts: List[str],
-        images: Optional[List[Image.Image]] = None,
+        images: Optional[PromptImageInput] = None,
         **kwargs: Any,
     ) -> List[Tuple[List[List[int]], List[str]]]:
         if images:
@@ -308,7 +314,7 @@ class HfRunner:
         self,
         prompts: List[str],
         max_tokens: int,
-        images: Optional[List[Image.Image]] = None,
+        images: Optional[PromptImageInput] = None,
         **kwargs: Any,
     ) -> List[Tuple[List[int], str]]:
         outputs = self.generate(prompts,
@@ -345,7 +351,7 @@ class HfRunner:
         self,
         prompts: List[str],
         max_tokens: int,
-        images: Optional[List[Image.Image]] = None,
+        images: Optional[PromptImageInput] = None,
         **kwargs: Any,
     ) -> List[List[torch.Tensor]]:
         all_logprobs: List[List[torch.Tensor]] = []
@@ -427,8 +433,8 @@ class HfRunner:
         prompts: List[str],
         max_tokens: int,
         num_logprobs: int,
-        images: Optional[List[Image.Image]] = None,
-        audios: Optional[List[Tuple[np.ndarray, int]]] = None,
+        images: Optional[PromptImageInput] = None,
+        audios: Optional[PromptAudioInput] = None,
         **kwargs: Any,
     ) -> List[Tuple[List[int], str, List[Dict[int, float]]]]:
         all_logprobs: List[List[Dict[int, float]]] = []
@@ -665,7 +671,7 @@ class VllmRunner:
         self,
         prompts: List[str],
         max_tokens: int,
-        images: Optional[List[Image.Image]] = None,
+        images: Optional[PromptImageInput] = None,
     ) -> List[Tuple[List[int], str]]:
         greedy_params = SamplingParams(temperature=0.0, max_tokens=max_tokens)
         outputs = self.generate(prompts, greedy_params, images=images)
